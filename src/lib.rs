@@ -58,7 +58,9 @@ pub fn send_message(
     let response: SlackResponse = client.post_message(&config.token, &payload_bytes)?;
 
     if !response.ok {
-        let error_msg = response.error.unwrap_or_else(|| "unknown error".to_string());
+        let error_msg = response
+            .error
+            .unwrap_or_else(|| "unknown error".to_string());
         return Err(SlackCliError::SlackApiError(error_msg));
     }
 
@@ -66,10 +68,7 @@ pub fn send_message(
         warning = response.warning;
     }
 
-    Ok(SendResult {
-        ok: true,
-        warning,
-    })
+    Ok(SendResult { ok: true, warning })
 }
 
 #[derive(Debug)]
@@ -243,7 +242,9 @@ mod tests {
         });
         let cfg = config("Hello", None);
         let result = send_message(&client, &cfg);
-        assert!(matches!(result, Err(SlackCliError::SlackApiError(ref e)) if e == "channel_not_found"));
+        assert!(
+            matches!(result, Err(SlackCliError::SlackApiError(ref e)) if e == "channel_not_found")
+        );
     }
 
     #[test]

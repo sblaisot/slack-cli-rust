@@ -111,7 +111,10 @@ mod tests {
         assert_eq!(json["text"], "Hello world");
         assert_eq!(json["attachments"][0]["color"], "#FF0000");
         assert_eq!(json["attachments"][0]["blocks"][0]["type"], "section");
-        assert_eq!(json["attachments"][0]["blocks"][0]["text"]["text"], "Hello world");
+        assert_eq!(
+            json["attachments"][0]["blocks"][0]["text"]["text"],
+            "Hello world"
+        );
     }
 
     #[test]
@@ -119,15 +122,14 @@ mod tests {
         let payload = BlocksPayload {
             channel: "#general".to_string(),
             text: "Line1\nLine2\t\"quoted\" and \\backslash".to_string(),
-            blocks: vec![SectionBlock::new("Line1\nLine2\t\"quoted\" and \\backslash")],
+            blocks: vec![SectionBlock::new(
+                "Line1\nLine2\t\"quoted\" and \\backslash",
+            )],
         };
         let json_str = serde_json::to_string(&payload).unwrap();
         // Verify it's valid JSON by parsing it back
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(
-            parsed["text"],
-            "Line1\nLine2\t\"quoted\" and \\backslash"
-        );
+        assert_eq!(parsed["text"], "Line1\nLine2\t\"quoted\" and \\backslash");
     }
 
     #[test]
