@@ -56,7 +56,7 @@ pub fn send_message(
         let color = resolved_color.unwrap();
         let payload = AttachmentPayload {
             channel: config.channel.clone(),
-            text: config.message.clone(),
+            text: String::new(),
             attachments: vec![Attachment {
                 color,
                 blocks: vec![SectionBlock::new(&config.message)],
@@ -206,6 +206,7 @@ mod tests {
         let json = client.captured_json();
         assert!(json.get("attachments").is_some());
         assert!(json.get("blocks").is_none());
+        assert_eq!(json["text"], "");
         assert_eq!(json["attachments"][0]["color"], "#ff0000");
         assert_eq!(json["attachments"][0]["blocks"][0]["text"]["text"], "Hello");
     }
