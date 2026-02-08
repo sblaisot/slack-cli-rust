@@ -30,16 +30,42 @@ impl SectionBlock {
 }
 
 #[derive(Serialize)]
+pub struct HeaderBlock {
+    #[serde(rename = "type")]
+    pub block_type: String,
+    pub text: TextObject,
+}
+
+impl HeaderBlock {
+    pub fn new(text: &str) -> Self {
+        HeaderBlock {
+            block_type: "header".to_string(),
+            text: TextObject {
+                text_type: "plain_text".to_string(),
+                text: text.to_string(),
+            },
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum Block {
+    Header(HeaderBlock),
+    Section(SectionBlock),
+}
+
+#[derive(Serialize)]
 pub struct BlocksPayload {
     pub channel: String,
     pub text: String,
-    pub blocks: Vec<SectionBlock>,
+    pub blocks: Vec<Block>,
 }
 
 #[derive(Serialize)]
 pub struct Attachment {
     pub color: String,
-    pub blocks: Vec<SectionBlock>,
+    pub blocks: Vec<Block>,
 }
 
 #[derive(Serialize)]
@@ -86,7 +112,7 @@ mod tests {
         let payload = BlocksPayload {
             channel: "#general".to_string(),
             text: "Hello world".to_string(),
-            blocks: vec![SectionBlock::new("Hello world")],
+            blocks: vec![Block::Section(SectionBlock::new("Hello world"))],
         };
         let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["channel"], "#general");
@@ -103,7 +129,7 @@ mod tests {
             text: "Hello world".to_string(),
             attachments: vec![Attachment {
                 color: "#FF0000".to_string(),
-                blocks: vec![SectionBlock::new("Hello world")],
+                blocks: vec![Block::Section(SectionBlock::new("Hello world"))],
             }],
         };
         let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
@@ -118,13 +144,22 @@ mod tests {
     }
 
     #[test]
+    fn test_header_block_serialization() {
+        let block = Block::Header(HeaderBlock::new("My Title"));
+        let json: serde_json::Value = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["type"], "header");
+        assert_eq!(json["text"]["type"], "plain_text");
+        assert_eq!(json["text"]["text"], "My Title");
+    }
+
+    #[test]
     fn test_json_escaping_special_chars() {
         let payload = BlocksPayload {
             channel: "#general".to_string(),
             text: "Line1\nLine2\t\"quoted\" and \\backslash".to_string(),
-            blocks: vec![SectionBlock::new(
+            blocks: vec![Block::Section(SectionBlock::new(
                 "Line1\nLine2\t\"quoted\" and \\backslash",
-            )],
+            ))],
         };
         let json_str = serde_json::to_string(&payload).unwrap();
         // Verify it's valid JSON by parsing it back
@@ -137,7 +172,7 @@ mod tests {
         let payload = BlocksPayload {
             channel: "#general".to_string(),
             text: "Hello 🌍 world".to_string(),
-            blocks: vec![SectionBlock::new("Hello 🌍 world")],
+            blocks: vec![Block::Section(SectionBlock::new("Hello 🌍 world"))],
         };
         let json_str = serde_json::to_string(&payload).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -174,7 +209,7 @@ mod tests {
         let payload = BlocksPayload {
             channel: "#general".to_string(),
             text: "test".to_string(),
-            blocks: vec![SectionBlock::new("test")],
+            blocks: vec![Block::Section(SectionBlock::new("test"))],
         };
         let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
         assert!(json.get("attachments").is_none());

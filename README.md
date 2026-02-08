@@ -37,6 +37,9 @@ The token needs the `chat:write` scope.
 # Send a plain text message
 slack-cli --channel "#general" --message "Hello world"
 
+# Send with a title header
+slack-cli --channel "#general" --message "Build passed" --title "CI Status"
+
 # Send with a colored sidebar
 slack-cli --channel "#general" --message "Build passed" --color "#36a64f"
 
@@ -54,6 +57,7 @@ cat report.txt | slack-cli --channel "#reports"
 | `--channel` | `-c` | Yes | Channel name or ID |
 | `--message` | `-m` | No | Message text (reads stdin if omitted) |
 | `--color` | | No | Hex color for attachment sidebar |
+| `--title` | `-t` | No | Title displayed as a header above the message |
 
 ## Message Format Behavior
 

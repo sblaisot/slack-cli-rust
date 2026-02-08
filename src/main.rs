@@ -19,6 +19,10 @@ struct Args {
     /// Hex color for attachment sidebar (e.g. "#FF0000")
     #[arg(long)]
     color: Option<String>,
+
+    /// Title displayed as a header above the message
+    #[arg(short, long)]
+    title: Option<String>,
 }
 
 fn read_stdin() -> Result<String, SlackCliError> {
@@ -53,6 +57,7 @@ fn run() -> Result<(), SlackCliError> {
         channel: args.channel,
         message,
         color: args.color,
+        title: args.title,
         token,
     };
 
