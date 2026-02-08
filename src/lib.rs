@@ -41,7 +41,11 @@ pub fn send_message(
     client: &dyn SlackClient,
     config: &SendConfig,
 ) -> Result<SendResult, SlackCliError> {
-    let resolved_color = config.color.as_ref().map(|c| resolve_color(c)).transpose()?;
+    let resolved_color = config
+        .color
+        .as_ref()
+        .map(|c| resolve_color(c))
+        .transpose()?;
 
     let use_attachment = resolved_color.is_some() && config.message.len() <= ATTACHMENT_TEXT_MAX;
 
