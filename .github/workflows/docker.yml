@@ -1,8 +1,9 @@
 name: Docker
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -10,59 +11,43 @@ permissions:
   packages: write
 
 jobs:
-  build:
-    name: Build ${{ matrix.target }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-musl
-            arch: amd64
-          - target: aarch64-unknown-linux-musl
-            arch: arm64
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install cross
-        run: cargo install cross --locked
-
-      - name: Build
-        run: cross build --release --target ${{ matrix.target }}
-
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: binary-${{ matrix.arch }}
-          path: target/${{ matrix.target }}/release/slack-cli
-
   docker:
     name: Push Docker image
-    needs: build
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download amd64 binary
-        uses: actions/download-artifact@v4
-        with:
-          name: binary-amd64
-          path: binaries/amd64
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            TAG="${{ github.event.workflow_run.head_branch }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "minor=${VERSION%.*}" >> "$GITHUB_OUTPUT"
 
-      - name: Download arm64 binary
-        uses: actions/download-artifact@v4
-        with:
-          name: binary-arm64
-          path: binaries/arm64
-
-      - name: Make binaries executable
-        run: chmod +x binaries/*/slack-cli
+      - name: Download release assets
+        run: |
+          mkdir -p binaries/amd64 binaries/arm64
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --pattern "slack-cli-*-x86_64-unknown-linux-musl.tar.gz" \
+            --dir /tmp
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --pattern "slack-cli-*-aarch64-unknown-linux-musl.tar.gz" \
+            --dir /tmp
+          tar xzf /tmp/slack-cli-*-x86_64-unknown-linux-musl.tar.gz -C binaries/amd64
+          tar xzf /tmp/slack-cli-*-aarch64-unknown-linux-musl.tar.gz -C binaries/arm64
+          chmod +x binaries/*/slack-cli
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -81,8 +66,8 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ steps.tag.outputs.version }}
+            type=raw,value=${{ steps.tag.outputs.minor }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
