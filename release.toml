@@ -1,4 +1,3 @@
-[workspace]
 allow-branch = ["main"]
 sign-tag = false
 sign-commit = false
