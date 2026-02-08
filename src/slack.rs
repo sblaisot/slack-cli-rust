@@ -53,6 +53,7 @@ impl HeaderBlock {
 pub enum Block {
     Header(HeaderBlock),
     Section(SectionBlock),
+    Raw(serde_json::Value),
 }
 
 #[derive(Serialize)]
@@ -202,6 +203,54 @@ mod tests {
         let response: SlackResponse = serde_json::from_str(json).unwrap();
         assert!(response.ok);
         assert_eq!(response.warning.unwrap(), "missing_text_in_message");
+    }
+
+    #[test]
+    fn test_raw_block_serialization() {
+        let raw = serde_json::json!({
+            "type": "divider"
+        });
+        let block = Block::Raw(raw);
+        let json: serde_json::Value = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["type"], "divider");
+    }
+
+    #[test]
+    fn test_raw_blocks_in_blocks_payload() {
+        let raw_blocks = vec![
+            Block::Raw(
+                serde_json::json!({"type": "section", "text": {"type": "mrkdwn", "text": "Hello"}}),
+            ),
+            Block::Raw(serde_json::json!({"type": "divider"})),
+        ];
+        let payload = BlocksPayload {
+            channel: "#general".to_string(),
+            text: "fallback".to_string(),
+            blocks: raw_blocks,
+        };
+        let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["blocks"][0]["type"], "section");
+        assert_eq!(json["blocks"][0]["text"]["text"], "Hello");
+        assert_eq!(json["blocks"][1]["type"], "divider");
+    }
+
+    #[test]
+    fn test_raw_blocks_in_attachment_payload() {
+        let raw_blocks = vec![Block::Raw(
+            serde_json::json!({"type": "section", "text": {"type": "mrkdwn", "text": "Alert"}}),
+        )];
+        let payload = AttachmentPayload {
+            channel: "#ops".to_string(),
+            text: "".to_string(),
+            attachments: vec![Attachment {
+                color: "#a30200".to_string(),
+                blocks: raw_blocks,
+            }],
+        };
+        let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["attachments"][0]["blocks"][0]["type"], "section");
+        assert_eq!(json["attachments"][0]["blocks"][0]["text"]["text"], "Alert");
+        assert_eq!(json["attachments"][0]["color"], "#a30200");
     }
 
     #[test]

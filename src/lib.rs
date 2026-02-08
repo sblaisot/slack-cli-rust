@@ -16,6 +16,7 @@ pub struct SendConfig {
     pub color: Option<String>,
     pub title: Option<String>,
     pub token: String,
+    pub blocks: Option<Vec<serde_json::Value>>,
 }
 
 pub struct SendResult {
@@ -97,13 +98,18 @@ pub fn send_message(
         ));
     }
 
-    let mut blocks: Vec<Block> = Vec::new();
-    if let Some(ref title) = config.title {
-        blocks.push(Block::Header(HeaderBlock::new(title)));
-    }
-    for chunk in split_text(&config.message, SECTION_TEXT_MAX) {
-        blocks.push(Block::Section(SectionBlock::new(chunk)));
-    }
+    let blocks: Vec<Block> = if let Some(ref raw_blocks) = config.blocks {
+        raw_blocks.iter().cloned().map(Block::Raw).collect()
+    } else {
+        let mut b = Vec::new();
+        if let Some(ref title) = config.title {
+            b.push(Block::Header(HeaderBlock::new(title)));
+        }
+        for chunk in split_text(&config.message, SECTION_TEXT_MAX) {
+            b.push(Block::Section(SectionBlock::new(chunk)));
+        }
+        b
+    };
 
     let payload_bytes = if use_attachment {
         let color = resolved_color.unwrap();
@@ -147,6 +153,7 @@ pub enum SlackCliError {
     NoMessage,
     StdinError(std::io::Error),
     InvalidColor(String),
+    InvalidBlocksJson(String),
 }
 
 impl fmt::Display for SlackCliError {
@@ -162,6 +169,7 @@ impl fmt::Display for SlackCliError {
             SlackCliError::NoMessage => write!(f, "No message provided"),
             SlackCliError::StdinError(e) => write!(f, "Failed to read stdin: {e}"),
             SlackCliError::InvalidColor(c) => write!(f, "invalid color '{c}': expected #RRGGBB or keyword (good, success, warning, danger, error)"),
+            SlackCliError::InvalidBlocksJson(msg) => write!(f, "Invalid blocks JSON: {msg}"),
         }
     }
 }
@@ -227,6 +235,22 @@ mod tests {
             color: color.map(|c| c.to_string()),
             title: title.map(|t| t.to_string()),
             token: "xoxb-test".to_string(),
+            blocks: None,
+        }
+    }
+
+    fn config_with_blocks(
+        message: &str,
+        color: Option<&str>,
+        blocks: Vec<serde_json::Value>,
+    ) -> SendConfig {
+        SendConfig {
+            channel: "#test".to_string(),
+            message: message.to_string(),
+            color: color.map(|c| c.to_string()),
+            title: None,
+            token: "xoxb-test".to_string(),
+            blocks: Some(blocks),
         }
     }
 
@@ -493,5 +517,64 @@ mod tests {
         assert_eq!(blocks[0]["type"], "header");
         assert_eq!(blocks[1]["type"], "section");
         assert_eq!(blocks[2]["type"], "section");
+    }
+
+    #[test]
+    fn test_raw_blocks_without_color_sends_blocks_payload() {
+        let client = MockSlackClient::ok();
+        let raw =
+            vec![serde_json::json!({"type": "section", "text": {"type": "mrkdwn", "text": "raw"}})];
+        let cfg = config_with_blocks("", None, raw);
+        let result = send_message(&client, &cfg).unwrap();
+        assert!(result.ok);
+
+        let json = client.captured_json();
+        assert!(json.get("blocks").is_some());
+        assert!(json.get("attachments").is_none());
+        assert_eq!(json["blocks"][0]["type"], "section");
+        assert_eq!(json["blocks"][0]["text"]["text"], "raw");
+        assert_eq!(json["text"], "");
+    }
+
+    #[test]
+    fn test_raw_blocks_with_color_sends_attachment() {
+        let client = MockSlackClient::ok();
+        let raw = vec![serde_json::json!({"type": "divider"})];
+        let cfg = config_with_blocks("", Some("danger"), raw);
+        let result = send_message(&client, &cfg).unwrap();
+        assert!(result.ok);
+
+        let json = client.captured_json();
+        assert!(json.get("attachments").is_some());
+        assert!(json.get("blocks").is_none());
+        assert_eq!(json["attachments"][0]["blocks"][0]["type"], "divider");
+        assert_eq!(json["attachments"][0]["color"], "#a30200");
+    }
+
+    #[test]
+    fn test_raw_blocks_with_message_fallback() {
+        let client = MockSlackClient::ok();
+        let raw = vec![
+            serde_json::json!({"type": "section", "text": {"type": "mrkdwn", "text": "Hello"}}),
+        ];
+        let cfg = config_with_blocks("fallback text", None, raw);
+        send_message(&client, &cfg).unwrap();
+
+        let json = client.captured_json();
+        assert_eq!(json["text"], "fallback text");
+        assert_eq!(json["blocks"][0]["text"]["text"], "Hello");
+    }
+
+    #[test]
+    fn test_raw_blocks_bypass_message_to_section_construction() {
+        let client = MockSlackClient::ok();
+        let raw = vec![serde_json::json!({"type": "divider"})];
+        let cfg = config_with_blocks("this should not become a section", None, raw);
+        send_message(&client, &cfg).unwrap();
+
+        let json = client.captured_json();
+        let blocks = json["blocks"].as_array().unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["type"], "divider");
     }
 }
