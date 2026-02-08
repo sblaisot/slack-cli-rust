@@ -4,6 +4,18 @@ A Rust CLI tool for sending messages to Slack.
 
 ## Installation
 
+### From GitHub releases
+
+Download the archive for your platform from the [releases page](https://github.com/sebastien/slack-cli-rust/releases), extract it, and move the binary to a directory in your `PATH`.
+
+On macOS, the binary is not signed with an Apple Developer certificate. Gatekeeper will block it on first run. Remove the quarantine attribute to allow execution:
+
+```sh
+xattr -d com.apple.quarantine ./slack-cli
+```
+
+### From source
+
 ```sh
 cargo build --release
 cp target/release/slack-cli /usr/local/bin/
