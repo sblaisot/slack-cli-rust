@@ -20,15 +20,32 @@ pub struct SendResult {
     pub warning: Option<String>,
 }
 
+fn resolve_color(input: &str) -> Result<String, SlackCliError> {
+    match input.to_lowercase().as_str() {
+        "good" | "success" => Ok("#36a64f".to_string()),
+        "warning" => Ok("#daa038".to_string()),
+        "danger" | "error" => Ok("#a30200".to_string()),
+        hex if hex.len() == 7
+            && hex.starts_with('#')
+            && hex[1..].chars().all(|c| c.is_ascii_hexdigit()) =>
+        {
+            Ok(hex.to_string())
+        }
+        _ => Err(SlackCliError::InvalidColor(input.to_string())),
+    }
+}
+
 pub fn send_message(
     client: &dyn SlackClient,
     config: &SendConfig,
 ) -> Result<SendResult, SlackCliError> {
-    let use_attachment = config.color.is_some() && config.message.len() <= ATTACHMENT_TEXT_MAX;
+    let resolved_color = config.color.as_ref().map(|c| resolve_color(c)).transpose()?;
+
+    let use_attachment = resolved_color.is_some() && config.message.len() <= ATTACHMENT_TEXT_MAX;
 
     let mut warning: Option<String> = None;
 
-    if config.color.is_some() && config.message.len() > ATTACHMENT_TEXT_MAX {
+    if resolved_color.is_some() && config.message.len() > ATTACHMENT_TEXT_MAX {
         warning = Some(format!(
             "Message exceeds {} chars; sending without color",
             ATTACHMENT_TEXT_MAX
@@ -36,12 +53,12 @@ pub fn send_message(
     }
 
     let payload_bytes = if use_attachment {
-        let color = config.color.as_ref().unwrap();
+        let color = resolved_color.unwrap();
         let payload = AttachmentPayload {
             channel: config.channel.clone(),
             text: config.message.clone(),
             attachments: vec![Attachment {
-                color: color.clone(),
+                color,
                 blocks: vec![SectionBlock::new(&config.message)],
             }],
         };
@@ -79,6 +96,7 @@ pub enum SlackCliError {
     SlackApiError(String),
     NoMessage,
     StdinError(std::io::Error),
+    InvalidColor(String),
 }
 
 impl fmt::Display for SlackCliError {
@@ -93,6 +111,7 @@ impl fmt::Display for SlackCliError {
             SlackCliError::SlackApiError(e) => write!(f, "Slack API error: {e}"),
             SlackCliError::NoMessage => write!(f, "No message provided"),
             SlackCliError::StdinError(e) => write!(f, "Failed to read stdin: {e}"),
+            SlackCliError::InvalidColor(c) => write!(f, "invalid color '{c}': expected #RRGGBB or keyword (good, success, warning, danger, error)"),
         }
     }
 }
@@ -187,7 +206,7 @@ mod tests {
         let json = client.captured_json();
         assert!(json.get("attachments").is_some());
         assert!(json.get("blocks").is_none());
-        assert_eq!(json["attachments"][0]["color"], "#FF0000");
+        assert_eq!(json["attachments"][0]["color"], "#ff0000");
         assert_eq!(json["attachments"][0]["blocks"][0]["text"]["text"], "Hello");
     }
 
@@ -217,7 +236,7 @@ mod tests {
 
         let json = client.captured_json();
         assert!(json.get("attachments").is_some());
-        assert_eq!(json["attachments"][0]["color"], "#00FF00");
+        assert_eq!(json["attachments"][0]["color"], "#00ff00");
     }
 
     #[test]
@@ -257,5 +276,59 @@ mod tests {
         let cfg = config("Hello", None);
         let result = send_message(&client, &cfg).unwrap();
         assert_eq!(result.warning.unwrap(), "missing_text_in_message");
+    }
+
+    #[test]
+    fn test_resolve_color_valid_hex() {
+        assert_eq!(resolve_color("#FF0000").unwrap(), "#ff0000");
+    }
+
+    #[test]
+    fn test_resolve_color_good() {
+        assert_eq!(resolve_color("good").unwrap(), "#36a64f");
+    }
+
+    #[test]
+    fn test_resolve_color_success_case_insensitive() {
+        assert_eq!(resolve_color("Success").unwrap(), "#36a64f");
+    }
+
+    #[test]
+    fn test_resolve_color_warning() {
+        assert_eq!(resolve_color("warning").unwrap(), "#daa038");
+    }
+
+    #[test]
+    fn test_resolve_color_danger() {
+        assert_eq!(resolve_color("danger").unwrap(), "#a30200");
+    }
+
+    #[test]
+    fn test_resolve_color_error() {
+        assert_eq!(resolve_color("error").unwrap(), "#a30200");
+    }
+
+    #[test]
+    fn test_resolve_color_invalid_keyword() {
+        assert!(matches!(
+            resolve_color("blue"),
+            Err(SlackCliError::InvalidColor(ref s)) if s == "blue"
+        ));
+    }
+
+    #[test]
+    fn test_resolve_color_invalid_hex_chars() {
+        assert!(matches!(
+            resolve_color("#GGG000"),
+            Err(SlackCliError::InvalidColor(_))
+        ));
+    }
+
+    #[test]
+    fn test_resolve_color_invalid_hex_too_short() {
+        assert!(matches!(
+            resolve_color("#FFF"),
+            Err(SlackCliError::InvalidColor(_))
+        ));
     }
 }
