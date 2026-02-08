@@ -8,6 +8,7 @@ use crate::slack::{
 use std::fmt;
 
 pub const ATTACHMENT_TEXT_MAX: usize = 4000;
+pub const SECTION_TEXT_MAX: usize = 3000;
 
 pub struct SendConfig {
     pub channel: String,
@@ -37,6 +38,44 @@ fn resolve_color(input: &str) -> Result<String, SlackCliError> {
     }
 }
 
+fn char_len(text: &str) -> usize {
+    text.chars().count()
+}
+
+fn split_text(text: &str, max_len: usize) -> Vec<&str> {
+    if char_len(text) <= max_len {
+        return vec![text];
+    }
+
+    let mut chunks = Vec::new();
+    let mut remaining = text;
+
+    while !remaining.is_empty() {
+        if char_len(remaining) <= max_len {
+            chunks.push(remaining);
+            break;
+        }
+
+        // Find the byte offset of the max_len-th character
+        let byte_limit = remaining
+            .char_indices()
+            .nth(max_len)
+            .map(|(i, _)| i)
+            .unwrap_or(remaining.len());
+
+        // Find the last newline within the limit
+        let split_at = remaining[..byte_limit]
+            .rfind('\n')
+            .map(|pos| pos + 1) // include the newline in the current chunk
+            .unwrap_or(byte_limit); // hard split if no newline found
+
+        chunks.push(&remaining[..split_at]);
+        remaining = &remaining[split_at..];
+    }
+
+    chunks
+}
+
 pub fn send_message(
     client: &dyn SlackClient,
     config: &SendConfig,
@@ -62,7 +101,9 @@ pub fn send_message(
     if let Some(ref title) = config.title {
         blocks.push(Block::Header(HeaderBlock::new(title)));
     }
-    blocks.push(Block::Section(SectionBlock::new(&config.message)));
+    for chunk in split_text(&config.message, SECTION_TEXT_MAX) {
+        blocks.push(Block::Section(SectionBlock::new(chunk)));
+    }
 
     let payload_bytes = if use_attachment {
         let color = resolved_color.unwrap();
@@ -385,5 +426,72 @@ mod tests {
         let json = client.captured_json();
         assert_eq!(json["blocks"].as_array().unwrap().len(), 1);
         assert_eq!(json["blocks"][0]["type"], "section");
+    }
+
+    #[test]
+    fn test_split_text_short_message() {
+        let chunks = split_text("Hello", 3000);
+        assert_eq!(chunks, vec!["Hello"]);
+    }
+
+    #[test]
+    fn test_split_text_at_boundary() {
+        let msg = "a".repeat(3000);
+        let chunks = split_text(&msg, 3000);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].len(), 3000);
+    }
+
+    #[test]
+    fn test_split_text_splits_at_newline() {
+        let mut msg = "a".repeat(2990);
+        msg.push('\n');
+        msg.push_str(&"b".repeat(100));
+        let chunks = split_text(&msg, 3000);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0], format!("{}\n", "a".repeat(2990)));
+        assert_eq!(chunks[1], "b".repeat(100));
+    }
+
+    #[test]
+    fn test_split_text_hard_splits_without_newline() {
+        let msg = "a".repeat(5000);
+        let chunks = split_text(&msg, 3000);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].len(), 3000);
+        assert_eq!(chunks[1].len(), 2000);
+    }
+
+    #[test]
+    fn test_long_message_creates_multiple_section_blocks() {
+        let mut msg = "a".repeat(2990);
+        msg.push('\n');
+        msg.push_str(&"b".repeat(100));
+        let client = MockSlackClient::ok();
+        let cfg = config(&msg, None, None);
+        send_message(&client, &cfg).unwrap();
+
+        let json = client.captured_json();
+        let blocks = json["blocks"].as_array().unwrap();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["type"], "section");
+        assert_eq!(blocks[1]["type"], "section");
+    }
+
+    #[test]
+    fn test_long_message_with_title_creates_header_and_multiple_sections() {
+        let mut msg = "a".repeat(2990);
+        msg.push('\n');
+        msg.push_str(&"b".repeat(100));
+        let client = MockSlackClient::ok();
+        let cfg = config(&msg, None, Some("Title"));
+        send_message(&client, &cfg).unwrap();
+
+        let json = client.captured_json();
+        let blocks = json["blocks"].as_array().unwrap();
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0]["type"], "header");
+        assert_eq!(blocks[1]["type"], "section");
+        assert_eq!(blocks[2]["type"], "section");
     }
 }
