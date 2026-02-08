@@ -6,7 +6,12 @@ use std::io::{self, IsTerminal, Read};
 use std::process;
 
 #[derive(Parser)]
-#[command(name = "slack-cli", about = "Send messages to Slack")]
+#[command(
+    name = "slack-cli",
+    about = "Send messages to Slack",
+    version,
+    before_help = concat!("slack-cli v", env!("CARGO_PKG_VERSION")),
+)]
 struct Args {
     /// Channel name or ID (e.g. "#general" or "C01234567")
     #[arg(short, long)]
