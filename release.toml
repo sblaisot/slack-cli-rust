@@ -1,0 +1,10 @@
+[workspace]
+allow-branch = ["main"]
+sign-tag = false
+sign-commit = false
+push = true
+push-remote = "origin"
+publish = false
+tag-message = "chore: release v{{version}}"
+pre-release-commit-message = "chore: release v{{version}}"
+verify = true
