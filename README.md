@@ -17,7 +17,7 @@ xattr -d com.apple.quarantine ./slack-cli
 ### Docker
 
 ```sh
-docker run --rm -e SLACK_API_KEY ghcr.io/sblaisot/slack-cli-rust \
+docker run --rm -e SLACK_API_KEY ghcr.io/sblaisot/slack-cli-rust:latest \
   --channel "#general" --message "Hello from Docker"
 ```
 
