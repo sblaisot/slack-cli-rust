@@ -14,6 +14,15 @@ On macOS, the binary is not signed with an Apple Developer certificate. Gatekeep
 xattr -d com.apple.quarantine ./slack-cli
 ```
 
+### Docker
+
+```sh
+docker run --rm -e SLACK_API_KEY ghcr.io/sblaisot/slack-cli-rust \
+  --channel "#general" --message "Hello from Docker"
+```
+
+Multi-arch images (`linux/amd64` and `linux/arm64`) are published to `ghcr.io` for every release tag.
+
 ### From source
 
 ```sh
